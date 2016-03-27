@@ -1,0 +1,327 @@
+#!/bin/bash
+
+################################################################################
+#
+# Author:      Joaquín José García Cañas
+# Description: Script to swap file descriptors between log files
+#
+# History:
+#    25/03/2016 - v1.0.0 - Initial version
+#
+################################################################################
+
+
+################################################################################
+# Functions
+################################################################################
+
+function activate_debug()
+{
+	set -x
+}
+
+function convert_stat()
+{
+	case "${1}" in
+		"0")
+			echo "OK"
+			;;
+		"1")
+			echo "WARNING"
+			;;
+		"2")
+			echo "CRITICAL"
+			;;
+		"3")
+			echo "UNKNOWN"
+			;;
+	esac
+}
+
+function execute_debugger()
+{
+	( get_exec && sleep 5 ) | gdb > /dev/null 2>&1
+}
+
+function get_count()
+{
+	echo "${COUNT}"
+}
+
+function get_data()
+{
+	echo -e "${DATA}"
+}
+
+function get_date()
+{
+	echo "${DATE}"
+}
+
+function get_dir()
+{
+	echo "${DIR}"
+}
+
+function get_exec()
+{
+	echo -e "${EXEC}"
+}
+
+function get_exit()
+{
+	echo "$(convert_stat "$(get_exit_stat)") - $(get_exit_text)"
+}
+
+function get_exit_stat()
+{
+	echo "${EXIT_STAT:-3}"
+}
+
+function get_exit_text()
+{
+	echo "${EXIT_TEXT:-An unexpected error has occurred}"
+}
+
+function get_file_mode()
+{
+	echo "${FILE_MODE}"
+}
+
+function get_file_name()
+{
+	echo "${FILE_NAME}"
+}
+
+function get_help()
+{
+	echo "${HELP}"
+}
+
+function get_id()
+{
+	echo "${ID}"
+}
+
+function is_data_valid()
+{
+	[[ -n "$(get_data)" ]] && echo "1" || echo "0"
+}
+
+function is_dir_valid()
+{
+	[[ -d "$(get_dir)" ]] && echo "1" || echo "0"
+}
+
+function is_gdb_available()
+{
+	[[ -z "$(hash gdb 2>&1)" ]] && echo "1" || echo "0"
+}
+
+function is_help_required()
+{
+	[[ -n "$(get_help)" ]] && echo "1" || echo "0"
+}
+
+function list_data_files()
+{
+	parse_data "${1}" "\1|\2"
+}
+
+function list_data_pids()
+{
+	parse_data "" "\3" | sort -u
+}
+
+function list_fd()
+{
+	find -L "/proc/${1}/fd" -samefile "$(get_dir)/${2}_$(get_date)" -printf "%f\n"
+}
+
+function list_files()
+{
+	find "$(get_dir)" -maxdepth 1 -type f -name "*_$(get_date)" -printf "%f\n"
+}
+
+function list_pids()
+{
+	fuser "$(get_dir)/${1}" 2>&1 | sed -r 's/^[^:]+:\ ([^$]+)$/\1/; s/\ /\n/g'
+}
+
+function parse_args()
+{
+	while [[ -n "${1}" ]]
+	do
+		case "${1}" in
+			"-d"|"--dir")
+				set_dir "${2}"
+				shift
+				;;
+			"-v"|"--verbose")
+				activate_debug
+				;;
+			"-h"|"--help")
+				set_help
+				;;
+		esac
+		
+		shift
+	done
+}
+
+function parse_data()
+{
+	get_data | sed -r '/'"${1:-.*}"'/!d; s/^([^|]+)\|([^|]+)\|([^$]+)$/'"${2}"'/'
+}
+
+function set_count()
+{
+	COUNT="$(( COUNT ${1:-+}= ${2:-1} ))"
+}
+
+function set_data()
+{
+	[[ -n "${DATA}" ]] && DATA+="\n${1}" || DATA="${1}"
+}
+
+function set_date()
+{
+	DATE="$(date '+%Y-%m-%d')"
+}
+
+function set_dir()
+{
+	DIR="${1}"
+}
+
+function set_exec()
+{
+	[[ -n "${EXEC}" && "${2:-a}" != "w" ]] && EXEC+="\n${1}" || EXEC="${1}"
+}
+
+function set_exit()
+{
+	set_exit_stat "${1}"
+	set_exit_text "${2}"
+}
+
+function set_exit_stat()
+{
+	EXIT_STAT="${1}"
+}
+
+function set_exit_text()
+{
+	EXIT_TEXT="${1}"
+}
+
+function set_file_mode()
+{
+	FILE_MODE="$(stat $(get_dir)/${1} | sed -r '/Uid/!d; s/^[^0-9]+([0-9]+)[^$]+$/\1/')"
+}
+
+function set_file_name()
+{
+	FILE_NAME="${1%_*}"
+}
+
+function set_help()
+{
+	HELP="$(echo -e \
+			"Usage: ${BASH_SOURCE[0]} [-h] [-v] -d directory" \
+			"\n" \
+			"\n  -d, --dir" \
+			"\n    Specifies logs directory location (no trailing slash). The directory location must be valid" \
+			"\n    and writable." \
+			"\n" \
+			"\n  -h, --help" \
+			"\n    Shows this help message." \
+			"\n" \
+			"\n  -v, --verbose" \
+			"\n    Enable verbose logging of what postrotate is doing." \
+			"\n" \
+			"\nExample: ${BASH_SOURCE[0]} -d /service/tomcat/logs")"
+}
+
+function set_id()
+{
+	ID="$(get_count)"
+}
+
+function swap_files()
+{
+	set_date
+	
+	while read FILE
+	do
+		set_file_name "${FILE}"
+		set_file_mode "${FILE}"
+		
+		while read PID
+		do
+			set_data "$(get_file_name)|$(get_file_mode)|${PID}"
+		done < <(list_pids "${FILE}")
+	done < <(list_files)
+	
+	if [[ "$(is_data_valid)" -eq "1" ]]
+	then
+		while read PID
+		do
+			set_count "*" "0"
+			set_exec "attach ${PID}" "w"
+			
+			while read FILE
+			do
+				set_exec "call open (\"$(get_dir)/${FILE%|*}\", 66, ${FILE##*|})"
+				set_count
+				set_id
+				
+				while read FD
+				do
+					set_exec "call dup2(\$$(get_id), ${FD})"
+					set_count
+				done < <(list_fd "${PID}" "${FILE%|*}")
+				
+				set_exec "call close(\$$(get_id))"
+				set_count
+			done < <(list_data_files "${PID}")
+			
+			set_exec "detach"
+			set_exec "quit"
+			execute_debugger
+		done < <(list_data_pids)
+		
+		set_exit "0" "File swapping completed"
+	else
+		set_exit "1" "No files found to swap"
+	fi
+}
+
+
+################################################################################
+# Main program
+################################################################################
+
+parse_args "${@}"
+
+if [[ "$(is_help_required)" -eq "0" ]]
+then
+	if [[ "$(is_dir_valid)" -eq "1" ]]
+	then
+		if [[ "$(is_gdb_available)" -eq "1" ]]
+		then
+			swap_files
+		else
+			set_exit "2" "Unable to find debugger 'gdb'"
+		fi
+	else
+		set_exit "2" "Invalid directory location provided (try '${BASH_SOURCE[0]} --help' for more information)"
+	fi
+	
+	get_exit
+else
+	get_help
+fi
+
+
+exit "$(get_exit_stat)"
