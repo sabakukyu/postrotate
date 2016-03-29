@@ -7,6 +7,7 @@
 #
 # History:
 #    25/03/2016 - v1.0.0 - Initial version
+#    29/03/2016 - v1.1.0 - Add new option -s (--suffix)
 #
 ################################################################################
 
@@ -83,6 +84,11 @@ function get_exit_text()
 	echo "${EXIT_TEXT:-An unexpected error has occurred}"
 }
 
+function get_file()
+{
+	echo "$(get_file_name)|$(get_file_mode)"
+}
+
 function get_file_mode()
 {
 	echo "${FILE_MODE}"
@@ -101,6 +107,11 @@ function get_help()
 function get_id()
 {
 	echo "${ID}"
+}
+
+function get_suffix()
+{
+	echo "${SUFFIX:-_%Y-%m-%d}"
 }
 
 function is_data_valid()
@@ -135,17 +146,17 @@ function list_data_pids()
 
 function list_fd()
 {
-	find -L "/proc/${1}/fd" -samefile "$(get_dir)/${2}_$(get_date)" -printf "%f\n"
+	find -L "/proc/${1}/fd" -samefile "$(get_dir)/${2}$(get_date)" -printf "%f\n"
 }
 
 function list_files()
 {
-	find "$(get_dir)" -maxdepth 1 -type f -name "*_$(get_date)" -printf "%f\n"
+	find "$(get_dir)" -maxdepth 1 -type f -name "*$(get_date)" -printf "%f\n"
 }
 
 function list_pids()
 {
-	fuser "$(get_dir)/${1}" 2>&1 | sed -r 's/^[^:]+:\ ([^$]+)$/\1/; s/\ /\n/g'
+	fuser "$(get_dir)/${1}" 2> /dev/null | xargs -n 1 -r
 }
 
 function parse_args()
@@ -155,6 +166,10 @@ function parse_args()
 		case "${1}" in
 			"-d"|"--dir")
 				set_dir "${2}"
+				shift
+				;;
+			"-s"|"--suffix")
+				set_suffix "${2}"
 				shift
 				;;
 			"-v"|"--verbose")
@@ -186,7 +201,7 @@ function set_data()
 
 function set_date()
 {
-	DATE="$(date '+%Y-%m-%d')"
+	DATE="$(date "+$(get_suffix)")"
 }
 
 function set_dir()
@@ -215,6 +230,12 @@ function set_exit_text()
 	EXIT_TEXT="${1}"
 }
 
+function set_file()
+{
+	set_file_mode "${1}"
+	set_file_name "${1}"
+}
+
 function set_file_mode()
 {
 	FILE_MODE="$(stat $(get_dir)/${1} | sed -r '/Uid/!d; s/^[^0-9]+([0-9]+)[^$]+$/\1/')"
@@ -228,19 +249,22 @@ function set_file_name()
 function set_help()
 {
 	HELP="$(echo -e \
-			"Usage: ${BASH_SOURCE[0]} [-h] [-v] -d directory" \
+			"Usage: ${BASH_SOURCE[0]} [-h] [-v] -d directory [-s suffix]" \
 			"\n" \
 			"\n  -d, --dir" \
-			"\n    Specifies logs directory location (no trailing slash). The directory location must be valid" \
-			"\n    and writable." \
+			"\n    Specifies the logs directory location (no trailing slash). The directory" \
+			"\n    location must be valid and writable." \
 			"\n" \
 			"\n  -h, --help" \
 			"\n    Shows this help message." \
 			"\n" \
+			"\n  -s, --suffix" \
+			"\n    Specifies the suffix of the rotated logs. Default value is '_%Y-%m-%d'." \
+			"\n" \
 			"\n  -v, --verbose" \
 			"\n    Enable verbose logging of what postrotate is doing." \
 			"\n" \
-			"\nExample: ${BASH_SOURCE[0]} -d /service/tomcat/logs")"
+			"\nExample: ${BASH_SOURCE[0]} -d /service/tomcat/logs -s _%Y-%m-%d")"
 }
 
 function set_id()
@@ -248,18 +272,22 @@ function set_id()
 	ID="$(get_count)"
 }
 
-function swap_files()
+function set_suffix()
+{
+	SUFFIX="${1}"
+}
+
+function swap_fd()
 {
 	set_date
 	
 	while read FILE
 	do
-		set_file_name "${FILE}"
-		set_file_mode "${FILE}"
+		set_file "${FILE}"
 		
 		while read PID
 		do
-			set_data "$(get_file_name)|$(get_file_mode)|${PID}"
+			set_data "$(get_file)|${PID}"
 		done < <(list_pids "${FILE}")
 	done < <(list_files)
 	
@@ -291,9 +319,9 @@ function swap_files()
 			execute_debugger
 		done < <(list_data_pids)
 		
-		set_exit "0" "File swapping completed"
+		set_exit "0" "File descriptors swap completed"
 	else
-		set_exit "1" "No files found to swap"
+		set_exit "1" "No files found"
 	fi
 }
 
@@ -310,7 +338,7 @@ then
 	then
 		if [[ "$(is_gdb_available)" -eq "1" ]]
 		then
-			swap_files
+			swap_fd
 		else
 			set_exit "2" "Unable to find debugger 'gdb'"
 		fi

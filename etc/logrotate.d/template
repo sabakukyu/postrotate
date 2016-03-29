@@ -2,17 +2,18 @@
 /path/to/logs/<logs_pattern> {
 	<daily|weekly|monthly|yearly>
 	dateext
-	dateformat _%Y-%m-%d
+	dateformat <format>
 	missingok
 	nocompress
 	rotate <count>
 	sharedscripts
 	postrotate
-		su - <logs_owner> -c "/path/to/script/postrotate -d /path/to/logs"
+		su - <logs_owner> -c "/path/to/script/postrotate -d /path/to/logs -s <logs_suffix>"
 	endscript
 }
 
-# example:
+#
+# Example:
 #
 #/service/tomcat/logs/*.log {
 #	daily
@@ -23,6 +24,7 @@
 #	rotate 7
 #	sharedscripts
 #	postrotate
-#		su - tomcat -c "/home/tomcat/scripts/postrotate -d /service/tomcat/logs"
+#		su - tomcat -c "/home/tomcat/scripts/postrotate -d /service/tomcat/logs -s _%Y-%m-%d"
 #	endscript
 #}
+
