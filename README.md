@@ -1,6 +1,6 @@
 # **postrotate**
 
-The *postrotate* script is designed to rotate logs in combination with the *logrotate* utility. The *logrotate* utility archive old logs adding a suffix (preferably a date) and once completed, run *postrotate* script to generate new logs without suffix and swap file descriptors (open file descriptors to the generated logs and close file descriptors of the rotated logs).
+The *postrotate* script is designed to rotate logs in combination with the *logrotate* utility. The *logrotate* utility archive old logs adding a suffix (e.g. a date) and once completed, run *postrotate* script to generate new logs without suffix and swap file descriptors (open file descriptors to the generated logs and close file descriptors of the rotated logs).
 
 Log rotation will only work if the suffix added by *logrotate* utility is the same as that passed to *postrotate* script and if rotated logs are not compressed (compression will break file descriptors).
 

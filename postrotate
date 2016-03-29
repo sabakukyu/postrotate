@@ -8,6 +8,7 @@
 # History:
 #    25/03/2016 - v1.0.0 - Initial version
 #    29/03/2016 - v1.1.0 - Add new option -s (--suffix)
+#    29/03/2016 - v1.1.1 - Bugfixes and small improvements
 #
 ################################################################################
 
@@ -54,11 +55,6 @@ function get_data()
 	echo -e "${DATA}"
 }
 
-function get_date()
-{
-	echo "${DATE}"
-}
-
 function get_dir()
 {
 	echo "${DIR}"
@@ -76,12 +72,12 @@ function get_exit()
 
 function get_exit_stat()
 {
-	echo "${EXIT_STAT:-3}"
+	echo "${EXIT_STAT:=3}"
 }
 
 function get_exit_text()
 {
-	echo "${EXIT_TEXT:-An unexpected error has occurred}"
+	echo "${EXIT_TEXT:=An unexpected error has occurred}"
 }
 
 function get_file()
@@ -111,7 +107,7 @@ function get_id()
 
 function get_suffix()
 {
-	echo "${SUFFIX:-_%Y-%m-%d}"
+	echo "${SUFFIX:=$(date "+_%F")}"
 }
 
 function is_data_valid()
@@ -146,12 +142,12 @@ function list_data_pids()
 
 function list_fd()
 {
-	find -L "/proc/${1}/fd" -samefile "$(get_dir)/${2}$(get_date)" -printf "%f\n"
+	find -L "/proc/${1}/fd" -samefile "$(get_dir)/${2}$(get_suffix)" -printf "%f\n"
 }
 
 function list_files()
 {
-	find "$(get_dir)" -maxdepth 1 -type f -name "*$(get_date)" -printf "%f\n"
+	find "$(get_dir)" -maxdepth 1 -type f -name "*$(get_suffix)" -printf "%f\n"
 }
 
 function list_pids()
@@ -199,11 +195,6 @@ function set_data()
 	[[ -n "${DATA}" ]] && DATA+="\n${1}" || DATA="${1}"
 }
 
-function set_date()
-{
-	DATE="$(date "+$(get_suffix)")"
-}
-
 function set_dir()
 {
 	DIR="${1}"
@@ -243,7 +234,7 @@ function set_file_mode()
 
 function set_file_name()
 {
-	FILE_NAME="${1%_*}"
+	FILE_NAME="${1%$(get_suffix)}"
 }
 
 function set_help()
@@ -274,13 +265,11 @@ function set_id()
 
 function set_suffix()
 {
-	SUFFIX="${1}"
+	SUFFIX="$(date "+${1}")"
 }
 
 function swap_fd()
 {
-	set_date
-	
 	while read FILE
 	do
 		set_file "${FILE}"
@@ -316,6 +305,7 @@ function swap_fd()
 			
 			set_exec "detach"
 			set_exec "quit"
+			
 			execute_debugger
 		done < <(list_data_pids)
 		
@@ -340,7 +330,7 @@ then
 		then
 			swap_fd
 		else
-			set_exit "2" "Unable to find debugger 'gdb'"
+			set_exit "2" "Unable to find GNU debugger ('gdb')"
 		fi
 	else
 		set_exit "2" "Invalid directory location provided (try '${BASH_SOURCE[0]} --help' for more information)"
